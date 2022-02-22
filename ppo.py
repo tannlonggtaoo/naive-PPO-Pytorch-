@@ -18,6 +18,7 @@ from itertools import count
 seed = 114514
 render = True
 
+# automatically transform list-like stuff to pytorch tensor
 def auto2tensor(fn):
     '''
     decorator that automatically do Tensor()\n
@@ -89,10 +90,17 @@ class Critic(nn.Module):
         return x
 
     def get_value(self, state):
+        '''
+        with no gradient.\n
+        should use this version in advantage function
+        '''
         with torch.no_grad():
             return self(state)
 
 class Memory:
+    '''
+    including online calculation of mean,std of states
+    '''
     def __init__(self, num_state): # num_state actually means shape of state
         self.clear()
         self.obs_stat = running_stats(0, np.zeros(num_state), np.zeros(num_state))
@@ -214,7 +222,7 @@ class PPO():
         A = Tensor(self.T_timesteps)
         values = self.critic.get_value(stat.state).reshape(-1)
         # the end of stat may not be terminal, so prev_stuff need to be estimated
-        # assume state[self.T_timesteps - 1] approx= state[self.T_timesteps]
+        # assume difference between state[self.T_timesteps - 1] and state[self.T_timesteps] is small
         prev_g = values[self.T_timesteps - 1]
         prev_v = values[self.T_timesteps - 1]
         prev_A = 0
@@ -228,19 +236,19 @@ class PPO():
             prev_v = values[t]
             prev_A = A[t]
 
-        A = normclip(A) # should A be normalized?
+        A = normclip(A)
 
         # step 4 : optimize LOSS with minibatchsize = M, each sample point should be used in K_epoches
         for _ in range(self.K_epochs * int(self.T_timesteps / self.M_minibatchsize)):
 
+            # another approach is like below, but worse than current method
             # for index in BatchSampler(SubsetRandomSampler(range(len(self.memory))), self.M_minibatchsize, False):
+
             for i in range(0, self.T_timesteps, self.M_minibatchsize):
 
                 index = range(i, i + self.M_minibatchsize)
 
-                # detach?
                 advantages = A[index]
-                # advantages.detach_()
 
                 # get necessary data
                 value_from_statistics = G[index]
@@ -280,7 +288,7 @@ def demo():
     i_episode = 0
     i_epoch = 0
     agent = PPO("CartPole-v0")
-    while i_epoch < 1000:
+    while i_epoch < 2000:
         i_episode = agent.traj_gen(i_episode)
         i_epoch = agent.update(i_epoch)
 

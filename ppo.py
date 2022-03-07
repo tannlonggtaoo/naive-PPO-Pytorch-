@@ -14,8 +14,10 @@ from torch.utils.data.sampler import BatchSampler, SubsetRandomSampler
 import namedlist
 from itertools import count
 
+import matplotlib.pyplot as plt
+
 # global settings
-seed = 114514
+seed = 114514810
 render = True
 
 # automatically transform list-like stuff to pytorch tensor
@@ -205,6 +207,34 @@ class PPO():
                 if done:
                     break # reset env, goto next episode
         
+    def evaltotalreward(self, repeat_time = 5):
+        '''
+        run with current policy for repeat_time episodes
+        then return the mean total reward (no discount)
+        '''
+        totalrewards = 0
+        for _ in range(repeat_time):
+            state = self.env.reset()
+            if render : self.env.render()
+
+            for _ in count():
+                state = (state - self.memory.obs_stat.mean) / np.fmax(np.sqrt(self.memory.obs_stat.var), 1e-7)
+                state = np.clip(state, -5.0, 5.0)
+
+                action, action_prob = self.actor.select_action(state)
+                next_state, reward, done, _ = self.env.step(action)
+
+                totalrewards += reward
+                
+                if render : self.env.render()
+                state = next_state
+
+                if done:
+                    break # reset env, goto next episode
+
+        return totalrewards / repeat_time
+        
+        
 
     def update(self, i_epoch):
         '''
@@ -285,12 +315,26 @@ class PPO():
 
 
 def demo():
+    train_record_ep = []
+    train_record_totalreward = []
     i_episode = 0
     i_epoch = 0
     agent = PPO("CartPole-v0")
+
+    # initial performance
+    train_record_ep.append(i_episode)
+    train_record_totalreward.append(agent.evaltotalreward())
+
     while i_epoch < 2000:
         i_episode = agent.traj_gen(i_episode)
         i_epoch = agent.update(i_epoch)
+
+        # recording
+        train_record_ep.append(i_episode)
+        train_record_totalreward.append(agent.evaltotalreward())
+
+    plt.plot(train_record_ep, train_record_totalreward)
+    plt.show()
 
 if __name__ == '__main__':
     demo()
